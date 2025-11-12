@@ -51,4 +51,4 @@ Ultimately, the study suggests that **smartphone overuse is a universal behavior
 
 ---
 
-*Created by Isaiah Singer — Data Analyst | R, Python, SQL | UCSB Statistics & Data Science*
+*Created by Isaiah Singer — Data Analyst/Scientist | R, Python, SQL | UCSB Statistics & Data Science*
