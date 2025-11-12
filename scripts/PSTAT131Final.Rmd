@@ -1,0 +1,353 @@
+---
+title: "PSTAT 131 Final Project"
+author: "Isaiah Singer"
+date: "May 11, 2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#Setting Seed For Subsequent Code Chunks
+set.seed(17)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Determining the Relationships Between Age, Gender, and Smartphone Usage.
+<div style = "text-align: center;">
+![](finalimg1.jpg)
+</div>
+
+
+# Introduction:
+
+There have always been many critics among the older generations that have complained about the amount of time that the younger generations spend on their smartphones. The purpose of this project is to determine how truthful the older generations are as far as their smartphone usage is concerned. If you are someone that's considered part of the younger generation, then you can definitely understand where the idea of this project is coming from. On the contrary, if you would consider yourself an older person, you may end up being surprised by the results that we find. It may happen that there is not much difference in the daily time spent on smartphones between people of varying ages. It is also just as likely that the older generations are right, and that younger people have an issue with being on their smartphones too much. This is a point of interest that we will be exploring together throughout this study. You may find yourself asking if there is any merit in predicting and finding correlations between age and other variables, and the truthful answer is that there actually isn't, but not all studies need to have a greater purpose! If you've ever found yourself curious as to whether the older generations claims hold true, then this study is definitely for you. With that being said, let's move on to our roadmap and goals so that you can have a thorough understanding of what I am trying to achieve with this study. 
+
+## Project Goals and Roadmap:
+
+To go into further detail as to what we are specifically trying to do, we are going to use `Daily_Screen_Time_Hours` as our response variable and other variables such as `Age`, `Gender`, `Location`, and `Total_App_Usage_Hours` as our predictors. Our main goal with our `Daily_Screen_Time_Hours` as the response is to determine whether there is any mean difference in screen time between varying ages. In order to achieve that, we will need to analyze our data set and the first step of that is splitting our data. The purpose of splitting our data is to create a training and testing set. We will use our training set to well, train our data! Training our data includes testing different parameters and assessing different model performances so that we can later apply it to our testing set. The most vital part for the success of this data will be the recipe that we create to do the testing. The recipe essentially helps us prepare our data in the way our study desires for the analysis that we will be doing. Once we develop our framework by splitting our data and creating our recipe, we can then truly begin our data analysis by fitting our models, showing graphical representations of important variables, and trying to predict certain factors of interest. After thoroughly analyzing our data, we will then draw our conclusions from our findings.
+
+
+# Loading Data and Exploratory Data Analysis:
+
+Let's start with loading our dataset and factoring some variables, mainly gender and location for the time being. The reason for factoring our variables is due to the fact that we want to treat them as categorical variables. The graphical representations further down should help give more understanding as to why we factored these certain variables. We will also load the necessary libraries required to use the necessary functions and visualize graphs from our data.
+
+```{r, warning = FALSE, message = FALSE}
+#Libraries
+library(knitr) #for knitting efficiency
+library(tidymodels) #for our recipe
+library(ggplot2) #graphical representations
+library(dplyr)
+library(ggcorrplot) #for correlation plot
+library(xgboost) #for gradient boosted tree model
+library(ranger) #for random forest model
+```
+
+```{r}
+#Loading Data and Factoring Data
+
+#Loading Data
+smartphone <- read.csv("phone_final.csv")
+#Factoring Data
+smartphone$Gender <- factor(smartphone$Gender) 
+smartphone$Location <- factor(smartphone$Location)
+```
+
+Now that we have loaded our data and factored our categorical variables, we can start with splitting our data into it's training and testing sets, stratifying on our outcome variable `Daily_Screen_Time_Hours`. Afterwards, we can create a recipe using age as our response variable. In doing so, we will then truly begin to start our data analysis.
+
+```{r}
+#splitting the Data to Training and Testing Set
+smartphone_split <- initial_split(smartphone, prop = .8, strata = Daily_Screen_Time_Hours)
+#Allocating respective variables to testing and training
+smartphone_train <- training(smartphone_split)
+smartphone_test <- testing(smartphone_split)
+#Creating Recipe
+smartphone_recipe <- recipe(Daily_Screen_Time_Hours ~ Gender + Location + Age + Total_App_Usage_Hours + Number_of_Apps_Used, data = smartphone_train) %>%
+  step_dummy(Gender) %>% #Making sure Gender and Location are factored in recipe
+  step_dummy(Location) %>%
+  step_corr(all_numeric_predictors(), threshold = .9) %>% #Removing variables at 90% correlation threshold
+  step_normalize(all_numeric_predictors()) #normalizing the different scales of variables
+```
+Now that we have split our data into it's training and testing sets as well as created our recipe, let's just check if we have any NA values in our recipe since that may give us some issues later.
+
+```{r}
+#Checking for NA values
+sum(is.na(smartphone_train))
+```
+Thankfully, we received a value of 0, so we don't need to omit any NA values and can work with our recipe as it is. More importantly, we now have what we need to be able to create some graphical representations of our data. This will help us get a rudimentary idea on what the distribution of our data may look like. Let's start with a bar plot that plots screen time usage against age.
+
+```{r}
+#Creating graph for daily screen time by age
+
+#Getting average screen time by age
+screen_age <- smartphone_train %>%
+  group_by(Age) %>%
+  summarize(mean_screen = mean(Daily_Screen_Time_Hours))
+#Graphing
+ggplot(screen_age, aes(x = Age, y = mean_screen)) +
+  geom_col() +
+  labs(x = "Age",
+       y = "Screen Time(Hours)",
+       title = "Average Daily Screen Time Per Age") +
+  theme_minimal()
+```
+At first glance, there doesn't actually seem to be a noticeable trend throughout this data. It does seem that the 20-30 age range has a slightly higher average than the 50-60 range, but it is not substantially larger by any means. We will definitely need to do more testing to make any concrete conclusions, but so far it does actually seem like our initial claim of daily screen time not differing by much may hold true. It is expected that the average would be slightly higher in the 20-30 age range, but I actually am just as interested in showing that the mean difference isn't as great as people are led to believe it is. Let's also create a graph on gender and location and see if that plays a part in daily screen time.
+
+```{r}
+#Creating graph for daily screen time by gender and daily screen time by location
+
+#Gender Graph
+ggplot(smartphone_train, aes(x = Gender, y = Daily_Screen_Time_Hours, fill = Gender)) +
+  geom_boxplot() +
+  labs(x = "Gender",
+       y = "Screen Time(Hours)",
+       title = "Daily Screen Time by Gender") +
+  scale_fill_manual(values = c(Male = "#0000FF", Female = "#FFC0CB")) +
+  theme_minimal()
+
+#Location Graph
+ggplot(smartphone_train, aes(x = Location, y = Daily_Screen_Time_Hours, fill = Location)) +
+  geom_boxplot() +
+  labs(x = "Location",
+       y = "Screen Time(Hours)",
+       title = "Screen Time By Location") +
+  theme_minimal()
+```
+
+From our boxplots, we can see that one, there is little to not difference in screen time usage depending on gender. The location provided us with a little more information. We can see that Houston has the most variance in screen time usage and that Los Angeles has the least variance in screen time usage. New York has the lowest median and the median for Chicago, Houston, and Los Angeles are pretty comparable, with Phoenix only falling slightly behind those three. For our last graphical presentation, let's make a correlation matrix of our variables and see what it looks like for the time being. We need to prep and juice our recipe before in order to do our correlation matrix which you will see below.
+
+```{r}
+#Correlation Matrix
+smartphone_prep <- prep(smartphone_recipe, training = smartphone_train)
+smartphone_juice <- juice(smartphone_prep)
+#Used ChatGPT with a prompt to help me fix the assigned variables of my correlation matrix
+var_choice <- c("Age", "Daily_Screen_Time_Hours", "Total_App_Usage_Hours", "Number_of_Apps_Used")
+juice_corr <- smartphone_train %>%
+  select(all_of(var_choice)) %>%
+  cor(use = "pairwise.complete.obs")
+ggcorrplot(juice_corr,
+           method = "square", type = "lower",
+           lab = TRUE, lab_size = 3,
+            hc.order = TRUE,
+           outline.col = "black",
+           colors = c("blue", "#ADD8E6", "gray"))
+```
+This correlation heatmap does not provide us with any information, but at the same time it does.The fact that there's not a significant amount of correlation between these points such as daily screen time and age shows that there is not a strong correlation between the age of an individual and the amount of time they spend on their phone. Earlier, in the recipe I made, I had instructed it to exclude values that could bring issues with collinearity, namely total app usage and daily screen time, since they are somewhat related. The reason I bring this up is because there are zeros in the correlation matrix, and it would be odd to not mention it. As far as ages correlation with total app usage, the number was likely extremely small and was rounded to zero. For the rest of the values, we do not see strong correlations between any of them. Gender was not included in the heatmap since we did a boxplot earlier, and there was little to no difference in gender and screen time usage.
+
+So far, from what we've seen, the findings are actually very minimal, and that is a good thing! While it is definitely a bit surprising that age does not have any correlation to daily screen time usage, the fact that there isn't is helping my initial claim that I believed age was not a statistically significant factor in screen time usage.
+
+# Fitting Models:
+
+Now that we have shown some visual representations of our data, let's begin fitting some models to our data. What I mean by that is using certain models such as linear regression models and LDA, otherwise known as linear discriminant analysis, to see how they treat our data and determining which one fits our data the best. Earlier on, we already split our data into our training and testing set. That wasn't entirely necessary to do it so early considering we could've also made the graphical representations from our entire data set, but I wanted to stay strict to my training set since that is what we will be working with for the majority of this study. With that being said, let's move on to cross-validating our training set. k-fold cross-validation will be used to divide our training set into k samples where we will then do tests on the k amount of models to see their performance. Once again, we will be stratifying our response variable.
+
+```{r}
+#Setting up k-fold cross-validation
+smartphone_folds <- vfold_cv(smartphone_train, v = 5, strata = Daily_Screen_Time_Hours)
+```
+
+Now that we have assigned k-folds to a variable of our choosing, let's begin with fitting some models. The models that I decided to work with was a linear regression model, pruned decision tree, gradient boosted tree, and random forest. The reason I chose a linear regression model is kind of because it's just the ole reliable. It's a good baseline to measure from and may help us see if there are any issues with linearity as well depending on how the model performs. The pruned decision tree model is a really good model to prevent overfitting. Overfitting is kind of what it sounds like? Imagine that the model learned somewhat too well, and it's taking in too many details that end up hampering it's results. Due to that, you can get incorrect values that would otherwise have made you think that the model is performing very well. Random forest will help in the event that our model does have some issues with linearity, so it would kind of be the fallback if our linear regression model seems to perform poorly. Lastly, gradient boosted tree is a very customizeable and we can keep changing the parameters of it. Furthermore, it may help with reducing errors. Let's begin with fitting our models and putting them in workflows. Adding workflows to our model will just help us aggregate the information!
+
+```{r}
+#Defining Models
+lm <- linear_reg() %>%
+  set_engine("lm")
+ptree <- decision_tree() %>%
+  set_mode("regression") %>%
+  set_engine("rpart")
+gbt <- boost_tree(trees = 500, learn_rate = .1) %>%
+  set_mode("regression") %>%
+  set_engine("xgboost")
+rf <- rand_forest(trees = 500) %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+```
+
+Now that we have defined the models we are using, let's fit them into some workflows to aggregate the information! After that we can fit our models with k-fold cross-validation we did earlier.
+
+```{r}
+#Creating Workflows
+lm_wf <- workflow() %>%
+  add_model(lm) %>%
+  add_recipe(smartphone_recipe)
+ptree_wf <- workflow() %>%
+  add_model(ptree) %>%
+  add_recipe(smartphone_recipe)
+gbt_wf <- workflow() %>%
+  add_model(gbt) %>%
+  add_recipe(smartphone_recipe)
+rf_wf <- workflow() %>%
+  add_model(rf) %>%
+  add_recipe(smartphone_recipe)
+```
+
+There we go, we've now created our workflows. Not too bad right? The steps are nearly identical. We just create our workflow and add the recipe we made to the workflow earlier. Now let's perform our cross validation on our models. We will also be choosing the metrics that we want out of our models to help us determine whether they are a good fit or not. The metrics that are the root mean squared error, or the RMSE, and R-squared. The reason we want these specific metrics is because we are working with a continuous model! If we were working with a classification model, we would be looking for the ROC-AUC instead. That isn't relevant to this study, but it's a small piece of information to differentiate between continuous and classification outcomes.
+
+```{r, warning = FALSE, message = FALSE}
+#Fitting with our k-folds
+
+#But first, let's choose our metrics
+k_metrics <- metric_set(rmse, rsq)
+#Fitting models with k-fold resampling
+lm_cv <- fit_resamples(lm_wf, resamples = smartphone_folds, metrics = k_metrics)
+tree_cv <- fit_resamples(ptree_wf, resamples = smartphone_folds, metrics = k_metrics)
+gbt_cv <- fit_resamples(gbt_wf, resamples = smartphone_folds, metrics = k_metrics)
+rf_cv <- fit_resamples(rf_wf, resamples = smartphone_folds, metrics = k_metrics)
+```
+
+Great! That's another step out of the way. We have now fitted our models with the k-fold cross-validation that we did earlier. Now, let's just go ahead and test the raw performances of our models before any tuning just to see how they're initially behaving.
+
+```{r}
+#Bringing results together into one table
+cv_table <- bind_rows(lm_cv %>% collect_metrics %>% mutate(model = "Linear Regression Model"),
+            tree_cv %>% collect_metrics() %>% mutate(model = "Pruned Decision Tree"),
+            gbt_cv %>% collect_metrics() %>% mutate(model = "Gradient Boosted Tree"),
+            rf_cv %>% collect_metrics() %>% mutate(model = "Random Forest"))
+```
+There doesn't seem to be too much to take away from these models. To be frank, they all performed very poorly. Let's go over what we're looking at and try to make sense of it. The metrics we used from our models was the RMSE and $R^2$. These metrics help us with two things, seeing how much variance is explained in the dataset by our models, and our error range. Our RMSE helps with our error range while $R^2$ helps with explaining variance. Typically, you would like to $R^2$ at somewhere around the .7 range. If that were the case, that would mean our model would be explaining 70% of the variance in the data. Going over the values that we've gotten, we do not even have a singular model that explains even 1% of the variance in our data set. Looking at our RMSE values, the error is very high when we are considering the fact that we are working with daily screen time with smartphones. Our ranges hover around 3.7 with our gradient boosted tree even reaching 4.2. This would mean that our average prediction would be off my approximately 4 hours of daily screen time, which is HUGE! Now generally, you would be quite upset to see your models perform so poorly. But in the case of this study, I was actually trying to prove that age does not play a factor in screen time usage, and these models are outputting results that align with my claim. With that being said, our best performing model with an $R^2$ of $\approx$.69%. You may ask yourself, why isn't it the Gradient Boosted Tree model since it explains $\approx$.76% of the variance? That's a great question. Normally, $R^2$ and adjusted $R^2$ are very good indicators as to which model is performing better, but you also can not take it at face value. If you look at our RMSE for our Gradient Boosted Tree model, you can see that it's significantly higher than the rest of our models. That means that any predictions we would make with this model would be off by a much larger margin than the rest of them. BUT, before we choose our model, we do need to tune our models and see if it makes any difference. Remember, these are only the raw values from our cross-validation. There is still hope for the older generation that wishes to see there be a difference.
+
+# Tuning Models: 
+
+Let's tune our models up a bit then. Since there are no parameters to tune our linear regression model with, we are going to focus on our other three models and see if we can have them perform any better than they previously did.
+
+```{r}
+#Tuning Models with assistance of ChatGPT asking for help in tuning my models
+
+#Pruned Decision Tree
+ptree_tune <- decision_tree(cost_complexity = tune (),
+                            tree_depth = tune ()) %>%
+  set_mode("regression") %>%
+  set_engine("rpart")
+
+#Random Forest
+rf_tune <- rand_forest(mtry = tune(),
+                       min_n = tune (),
+                       trees = 500) %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+
+#Gradient Boosted Tree
+gbt_tune <- boost_tree(trees = tune(),
+                       tree_depth = tune(),
+                       learn_rate = tune()) %>%
+  set_mode("regression") %>%
+  set_engine("xgboost")
+```
+
+We have now created models with some tuning placeholders for now, and the next steps would be creating new workflows and then assigning some values to our grid in hopes that we can potentially make the models better.
+
+```{r}
+#Creating Workflows and Tuning Grids
+
+#Workflows with assistance of ChatGPT from previous prompt
+
+#Pruned Workflow
+ptree_wf_tune <- workflow() %>%
+  add_model(ptree_tune) %>%
+  add_recipe(smartphone_recipe)
+
+#Random Forest Workflow
+rf_wf_tune <- workflow() %>%
+  add_model(rf_tune) %>%
+  add_recipe(smartphone_recipe)
+
+#Gradient Workflow
+gbt_wf_tune <- workflow() %>%
+  add_model(gbt_tune) %>%
+  add_recipe(smartphone_recipe)
+
+#Assigning values to grids
+
+#Pruned Grid Values
+ptree_grid <- expand_grid(cost_complexity = seq(0, .001, length.out = 20),
+                          tree_depth = seq(2, 10, length.out = 5))
+
+#Random Forest Grid Values
+rf_grid <- grid_random(mtry(range = c(1, 5)),
+                       min_n(range = c(2, 20)),
+                       size = 20)
+
+#Gradient Grid Values
+gbt_grid <- grid_random(trees(range = c(100, 1000)),
+                        tree_depth(range = c(1, 10)),
+                        learn_rate(range = c(.01, .3)),
+                        size = 30)
+```
+
+I did use ChatGPT to make final decisions on what parameters I wanted to tune my grid on. After some back and forth, I decided on these values for my grid models. To phrase it simply, I tried to go for parameters that best fit my models that would cover the most base. Using the metrics we extracted from earlier with `k_metrics`, we will do the same with our tuned models as we did with our raw models.
+
+```{r}
+#Tuning with our k-fold cross validation
+ptree_tuned <- tune_grid(ptree_wf_tune, resamples = smartphone_folds, grid = ptree_grid, metrics = k_metrics)
+rf_tuned <- tune_grid(rf_wf_tune, resamples = smartphone_folds, grid = rf_grid, metrics = k_metrics)
+gbt_tuned <- tune_grid(gbt_wf_tune, resamples = smartphone_folds, grid = gbt_grid, metrics = k_metrics)
+```
+
+We have cross validated our newly tuned models, and now we are going to collect our best metrics from the tuned models and see what they output. If we didn't do this, we would get so many values in tabular form due to the 5 folds that we did on our data set from the k-fold cross-validation.
+
+```{r}
+#Let us now collect our best metrics
+ptree_best_rmse <- show_best(ptree_tuned, metric = "rmse", n = 1) %>%
+  mutate(.config = "Pruned Decision Tree")
+gbt_best_rmse <- show_best(gbt_tuned, metric = "rmse", n = 1) %>%
+  mutate(.config = "Gradient Boosted Tree")
+rf_best_rmse <- show_best(rf_tuned, metric = "rmse", n = 1) %>%
+  mutate(.config = "Random Forest")
+gbt_best_rsq <- show_best(gbt_tuned, metric = "rsq", n = 1) %>%
+  mutate(.config = "Gradient Boosted Tree")
+rf_best_rsq <- show_best(rf_tuned, metric = "rsq", n = 1) %>%
+  mutate(.config = "Random Forest")
+best_rmse <- bind_rows(ptree_best_rmse, gbt_best_rmse, rf_best_rmse)
+best_rmse
+best_rsq <- bind_rows(gbt_best_rsq, rf_best_rsq)
+best_rsq
+
+#autoplotting
+autoplot(ptree_tuned) + ggtitle("Tuned Pruned Decision Tree Model")
+autoplot(rf_tuned) + ggtitle("Tuned Random Forest Model")
+autoplot(gbt_tuned) + ggtitle("Tuned Gradient Boosted Tree Model")
+```
+Let's address the NA values first. The NA values that you see are part of the hyperparameters that you could've used to tune your model. Because I didn't use every single hyperparameter for my model, I'm naturally going to see some NA values. For my pruned decision tree, you can see that it was omitted from my $R^2$ table. If you look at the autoplot for my pruned decision tree, you can see that the graph has no verticality. This is because regardless of the grid values I tried to assign to my pruned decision tree, the model could not find any variance and therefore no $R^2$. Therefore, I could not find the best $R^2$ value for my pruned decision tree since they were all the same.With my model tuning, I have actually managed to make my gradient boosted tree model a better fit for my testing set than my linear regression model. There is now a much smaller RMSE, and the $R^2$ value rose to 1.4%, meaning it can now explain 1.4% of the variance in the model. If you remember, my $R^2$ was higher for my gradient model previously, but the RMSE was too high to reason choosing it over my linear regression model. With that not being the case anymore and my $R^2$ value being higher, the gradient boosted tree model has now become the best fit out of all my models! So, we will go with the gradient boosted tree model to predict my testing set. For the sake of it, we will also use our linear regression model and see how they compare to each other.
+
+# Applying the Best 2 Models to My Testing Set:
+
+We are approaching the final stretch now, all that's left is to finalize our workflow using the two models of our choosing and apply it to our testing set to see how they perform.
+
+```{r}
+#Taking best Gradient parameters
+best_gbt <- select_best(gbt_tuned, metric = "rmse")
+
+#Finalizing Gradient Workflow
+gbt_final <- gbt_wf_tune %>%
+  finalize_workflow(best_gbt)
+
+#Finalizing linear regression workflow
+lm_final <- workflow() %>%
+  add_recipe(smartphone_recipe) %>%
+  add_model(linear_reg() %>%
+              set_engine("lm"))
+  
+
+#Fitting both models to testing set
+lm_fit <- lm_final %>%
+  last_fit(smartphone_split)
+gbt_fit <- gbt_final %>%
+  last_fit(smartphone_split)
+
+#Collecting metrics
+lm_metric <- lm_fit %>%
+  collect_metrics() %>%
+  mutate(model = "Linear Regression")
+
+gbt_metric <- gbt_fit %>%
+  collect_metrics() %>%
+  mutate(model = "Gradient Boosted Tree")
+
+#Binding Rows
+bind_rows(lm_metric, gbt_metric)
+```
+It's a good thing we tested our linear regression model as well! As you can see, our linear regression model outperformed our gradient boosted tree model when applied to our testing set. That is not to say that either of them performed well at all. As a matter of fact, their $R^2$ could not be lower if they tried. This is a joke, there can always be less variance. It seems that our original linear regression model performed the best. As I stated before, it truly is the ole' reliable at times.
+
+# Conclusion:
+
+Depending on how you look at this project, you can either say that I received the exact results I wanted, or that I didn't get any results at all. Personally, I think it is more fitting to say that I got the results I wanted. That is to say, age is not a statistically significant factor in predicting daily screen time usage. We figured that out by creating graphs of different variables to see the correlation as well as fitting four different models to see how they performed with our training set. When all is said and done, all the results that I got pointed towards the fact that there is very little correlation between age and screen time usage. In the end, our linear regression model performed the best out of the models I chose, but it still performed poorly.
+
+I guess you can say that the age old saying of kids always being on their phones doesn't hold as much validity as some people in older generations may think! Or let's rephrase that. It may be the case that younger people are on their phone too much, perhaps even glued to their phone. This study wasn't exactly meant to say they aren't. What it did show is that people of varying ages use their phone the same amount. We figured that with thorough model testing, graphical representations, and model tuning. I hope that it comes as much of a surprise to you that the age old saying was proven wrong, because it sure was a big surprise to me as well. Maybe something that we can take away from this study is to not blame any specific generation on how much we use our smartphones, but rather trying to cut back from using our smartphones as a species. I am definitely in agreement that it isn't healthy to always be staring at a screen, and I hope this study goes to show that we all need to take that step forward to enjoy Earth more for what it is rather than staring at it through a camera. Thank you for reading my study.
